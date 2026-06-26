@@ -15,7 +15,7 @@ if "GEMINI_API_KEY" in st.secrets:
 else:
     MINHA_CHAVE_API = NOVA_CHAVE_GERADA
 
-MODELO_CEREBRO = "gemini-3.5-flash"
+MODELO_CEREBRO = "gemini-2.5-flash"
 # Modelo especialista do Google para sintetizar voz nativa avançada
 MODELO_VOZ_NATIVA = "gemini-2.5-flash" 
 
