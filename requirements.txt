@@ -3,4 +3,6 @@ google-genai
 edge-tts
 pillow
 elevenlabs
-transformers scipy torch
+transformers 
+scipy 
+torch
