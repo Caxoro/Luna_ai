@@ -10,7 +10,7 @@ from google.genai import types
 st.set_page_config(page_title="Luna - Assistente Virtual", page_icon="🌙", layout="centered")
 
 # Cole a sua NOVA chave gerada no AI Studio entre as aspas:
-NOVA_CHAVE_GERADA = "COLE_AQUI_SUA_NOVA_CHAVE_AIZA"
+NOVA_CHAVE_GERADA = "AQ.Ab8RN6JqXhgj_3hVBwJbJPlirNFnP0K3LxbtZ2GB9JsWK6zSJA"
 
 # Se estiver rodando no Streamlit Cloud, ele tenta pegar dos 'Secrets' seguros, 
 # se não encontrar, usa a chave que você colou acima.
