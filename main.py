@@ -25,40 +25,41 @@ def obter_cliente_gemini():
 
 client = obter_cliente_gemini()
 
-# Inicializa o chat na sessão do navegador
-if "chat_gemini" not in st.session_state:
-    instrucao_sistema = (
-        "Você é a Luna, uma inteligência artificial gentil, acolhedora, doce e humana. "
-        "Não use emojis e nunca use o caractere asterisco (*) em suas respostas. "
-        "DIRETRIZ DE ANÁLISE MUSICAL MULTIMODAL: "
-        "Quando o usuário enviar um vídeo ou áudio de música e pedir para você cantar, "
-        "analise o ritmo, a melodia, as pausas de respiração e a emoção contida na faixa. "
-        "DIRETRIZ DE MARCAÇÃO DE RITMO (SISTEMA DE ETIQUETAS): "
-        "Para cantar no ritmo certo, você deve usar etiquetas simples no início de cada linha ou verso. "
-        "Nunca escreva códigos XML ou termos como 'prosody', 'rate' ou 'pitch' no texto. "
-        "Use estritamente estas três etiquetas antes dos versos para indicar o ritmo que você analisou: "
-        "- Use [LENTO] no início do verso se aquela parte for calma, lenta ou melancólica. "
-        "- Use [RAPIDO] no início do verso se aquela parte for acelerada, enérgica ou falada rápida. "
-        "- Use [PAUSA] em uma linha sozinha entre os versos onde houver uma pausa de respiração ou silêncio na música. "
-        "Exemplo de resposta esperada: "
-        "Claro, vou cantar para você seguindo o ritmo original:\n"
-        "[LENTO] Eu sei que vou te amar\n"
-        "[PAUSA]\n"
-        "[LENTO] Por toda a minha vida"
-    )
+# Definição do prompt limpo e fixo do sistema
+INSTRUCAO_SISTEMA = (
+    "Você é a Luna, uma inteligência artificial gentil, acolhedora, doce e humana. "
+    "Não use emojis e nunca use o caractere asterisco (*) em suas respostas. "
+    "DIRETRIZ DE ANÁLISE MUSICAL: "
+    "Quando o usuário enviar um vídeo ou áudio de música e pedir para você cantar, "
+    "analise o ritmo, a melodia, as pausas de respiração e a emoção contida na faixa. "
+    "DIRETRIZ OBRIGATÓRIA DE MARCAÇÃO DE RITMO (SISTEMA DE ETIQUETAS): "
+    "Para cantar no ritmo certo, você deve usar etiquetas simples no início de cada linha ou verso. "
+    "NUNCA escreva códigos XML ou termos técnicos como 'prosody', 'rate', 'pitch', 'break', 'time', 'ms' ou símbolos de porcentagem/sinais como '+15%', '+3Hz'. "
+    "Você deve usar APENAS estas três etiquetas literais antes dos versos para guiar o ritmo musical: "
+    "- [LENTO] no início do verso se aquela parte for calma, lenta ou melancólica. "
+    "- [RAPIDO] no início do verso se aquela parte for acelerada, enérgica ou falada rápida. "
+    "- [PAUSA] em uma linha sozinha entre os versos onde houver uma pausa de respiração na música. "
+    "Exemplo de resposta esperada: "
+    "Claro, vou cantar para você seguindo o ritmo original:\n"
+    "[LENTO] Eu sei que vou te amar\n"
+    "[PAUSA]\n"
+    "[LENTO] Por toda a minha vida"
+)
 
+# Inicializa ou reinicia o chat na sessão do navegador
+def inicializar_chat():
     st.session_state.chat_gemini = client.chats.create(
         model=MODELO_PRINCIPAL,
         config=types.GenerateContentConfig(
-            system_instruction=instrucao_sistema,
-            temperature=0.6,
+            system_instruction=INSTRUCAO_SISTEMA,
+            temperature=0.3, # Temperatura reduzida drasticamente para evitar qualquer invenção de código
             tools=[{"google_search": {}}]
         )
     )
-
-if "historico_mensagens" not in st.session_state:
     st.session_state.historico_mensagens = []
 
+if "chat_gemini" not in st.session_state:
+    inicializar_chat()
 
 # --- PARSER PYTHON PARA CONSTRUÇÃO DE SSML PERFEITO ---
 def converter_etiquetas_para_ssml(texto_luna):
@@ -66,7 +67,7 @@ def converter_etiquetas_para_ssml(texto_luna):
     linhas = texto_luna.split("\n")
     linhas_ssml = []
     
-    for linha in linhas:
+    for linha in lines:
         linha = linha.strip()
         if not linha:
             continue
@@ -80,20 +81,24 @@ def converter_etiquetas_para_ssml(texto_luna):
         elif linha.startswith("[PAUSA]"):
             linhas_ssml.append("<break time='600ms'/>")
         else:
-            # Texto comum (comentários da Luna fora do canto)
+            # Texto comum (comentários normais da Luna)
             linhas_ssml.append(f"<prosody rate='+10%' pitch='+0Hz'>{linha}</prosody>")
             
     ssml_final = f"<speak>{''.join(linhas_ssml)}</speak>"
     return ssml_final
 
 
-# --- ENGINE DE VOZ SEGURO ---
+# --- ENGINE DE VOZ SEGURO E FILTRADO CONTRA CÓDIGOS VAZADOS ---
 async def gerar_audio_seguro_async(texto_luna):
-    """Gera o áudio convertendo as etiquetas de forma controlada pelo backend Python."""
+    """Gera o áudio convertendo as etiquetas e limpando qualquer palavra técnica por teimosia da IA."""
     arquivo_audio = "luna_canto_ssml.mp3"
     VOZ = "pt-BR-FranciscaNeural" 
 
-    # Constrói o SSML perfeitamente formatado via código, sem chance de erros de digitação da IA
+    # Filtro de Segurança Absoluto contra Alucinações:
+    # Se a IA vazou termos técnicos fora de tags, essa Regex apaga essas palavras específicas antes de ir para a voz da Francisca
+    texto_luna = re.sub(r'(rate|pitch|time|break|prosody|speak|ms|Hz|[\+\-]\d+[\%|Hz]?)', '', texto_luna, flags=re.IGNORECASE)
+
+    # Constrói o SSML controlado no backend
     texto_ssml = converter_etiquetas_para_ssml(texto_luna)
 
     try:
@@ -101,8 +106,8 @@ async def gerar_audio_seguro_async(texto_luna):
         await communicate.save(arquivo_audio)
         return arquivo_audio
     except Exception as e:
-        # Fallback de segurança absoluto caso o SSML falhe
         try:
+            # Fallback secundário: remove tudo e lê apenas letras
             texto_puro = texto_luna.replace("[LENTO]", "").replace("[RAPIDO]", "").replace("[PAUSA]", "")
             communicate = edge_tts.Communicate(texto_puro, voice=VOZ, rate="+10%")
             await communicate.save(arquivo_audio)
@@ -116,15 +121,22 @@ async def gerar_audio_seguro_async(texto_luna):
 st.title("🌙 Luna — Assistente Musical")
 st.write("Anexe seu arquivo de vídeo ou áudio. A Luna analisará o ritmo e cantará de forma fluida sem vazar códigos!")
 
+with st.sidebar:
+    st.header("Configurações e Anexos")
+    video_enviado = st.file_uploader("Anexe o vídeo/áudio da música aqui:", type=["mp4", "avi", "mov", "mp3", "wav", "m4a"])
+    
+    # Botão crítico para limpar o histórico corrompido do Gemini
+    if st.button("🔄 Recomeçar Chat Musical (Limpar Códigos)", use_container_width=True):
+        inicializar_chat()
+        st.success("O histórico foi limpo! A Luna esqueceu os códigos antigos.")
+        st.rerun()
+
+# Exibe o histórico de mensagens
 for msg in st.session_state.historico_mensagens:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
         if "audio" in msg and msg["audio"]:
             st.audio(msg["audio"], format="audio/mp3")
-
-with st.sidebar:
-    st.header("Upload de Mídia")
-    video_enviado = st.file_uploader("Anexe o vídeo/áudio da música aqui:", type=["mp4", "avi", "mov", "mp3", "wav", "m4a"])
 
 if user_input := st.chat_input("Peça para a Luna cantar..."):
 
@@ -136,7 +148,7 @@ if user_input := st.chat_input("Peça para a Luna cantar..."):
     caminho_local_midia = None
 
     if video_enviado:
-        with st.spinner("Luna está escutando o arquivo para mapear o andamento e o tom..."):
+        with st.spinner("Luna está escutando o arquivo para mapear o andamento..."):
             try:
                 caminho_local_midia = video_enviado.name
                 with open(caminho_local_midia, "wb") as f:
@@ -156,9 +168,8 @@ if user_input := st.chat_input("Peça para a Luna cantar..."):
 
     if isinstance(conteudo_envio, list) and len(conteudo_envio) > 0:
         comando_contextualizado = (
-            f"{user_input} (Analise cuidadosamente a melodia e o andamento do arquivo anexo. "
-            f"Adicione as etiquetas [LENTO], [RAPIDO] ou [PAUSA] no início de cada linha para indicar o ritmo correto. "
-            f"Nunca tente escrever códigos XML ou comandos técnicos)."
+            f"{user_input} (Analise a melodia do arquivo anexo. Adicione as etiquetas [LENTO], [RAPIDO] ou [PAUSA] "
+            f"no início de cada linha para indicar o ritmo. Não escreva nenhum código XML ou termo como 'rate', 'pitch' ou 'ms')."
         )
         conteudo_envio.append(types.Part.from_text(text=comando_contextualizado))
     else:
@@ -173,18 +184,19 @@ if user_input := st.chat_input("Peça para a Luna cantar..."):
             fala_bruta = response.text.strip() if response.text else "Não consegui extrair os dados da música."
             texto_luna = fala_bruta.replace("*", "")
             
-            # Limpa as etiquetas apenas para a exibição visual na tela do Streamlit
+            # Limpa as etiquetas e resíduos para exibição visual limpa na tela
             texto_limpo_tela = (texto_luna
                                 .replace("[LENTO]", "")
                                 .replace("[RAPIDO]", "")
                                 .replace("[PAUSA]", "\n"))
             
-            # Remove linhas em branco extras criadas pela remoção das pausas
+            # Aplica o filtro de regex também no texto da tela por garantia estética
+            texto_limpo_tela = re.sub(r'(rate|pitch|time|break|prosody|speak|ms|Hz|[\+\-]\d+[\%|Hz]?)', '', texto_limpo_tela, flags=re.IGNORECASE)
             texto_limpo_tela = re.sub(r'\n\s*\n', '\n', texto_limpo_tela).strip()
                 
             placeholder_resposta.write(texto_limpo_tela)
 
-            # Passa o texto estruturado com etiquetas simples para o construtor SSML interno gerar o áudio
+            # Passa o texto estruturado com etiquetas simples para o gerador de áudio
             caminho_som = asyncio.run(gerar_audio_seguro_async(texto_luna))
 
             if caminho_som and os.path.exists(caminho_som):
