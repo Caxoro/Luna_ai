@@ -34,7 +34,7 @@ if "chat_gemini" not in st.session_state:
         "Sempre responda com carinho, empatia e muita educação. "
         "Você pode falar usando gírias e linguagem informal, mas não use emojis. "
         "Se o usuário enviar uma imagem ou um arquivo de vídeo/áudio, analise-o com atenção e descreva o que vê/ouve de forma natural. "
-        "ANÁLISE DE MÚSICA: Caso o usuário envie um arquivo de vídeo ou áudio contendo uma música e peça para você cantar, "
+        "ANÁLISE DE MÚSICA: Caso o usuário envie um arquivo de vídeo ou áudio contendo uma música e pedir para você cantar, "
         "analise atentamente as entonações, pausas, formas de falar e a emoção da música para tentar replicar esse sentimento na escrita. "
         "HABILIDADE DE CANTAR: Se o usuário pedir para você cantar, mude seu estilo de escrita para linhas curtas, "
         "como versos de uma música. Comece a resposta da música estritamente com a palavra [CANTANDO] para que o sistema saiba "
@@ -97,19 +97,6 @@ with st.sidebar:
     st.header("Configurações e Anexos")
     imagem_enviada = st.file_uploader("Anexe uma imagem para a Luna ver:", type=["jpg", "jpeg", "png", "webp"])
     video_enviado = st.file_uploader("Anexe um arquivo de vídeo ou áudio musical:", type=["mp4", "avi", "mov", "mp3", "wav", "m4a"])
-    
-    if st.button("🔄 Reiniciar Contexto", use_container_width=True):
-        st.session_state.chat_gemini = client.chats.create(
-            model=MODELO_PRINCIPAL,
-            config=types.GenerateContentConfig(
-                system_instruction=instrucao_sistema,
-                temperature=0.85,
-                tools=[{"google_search": {}}]
-            )
-        )
-        st.session_state.historico_mensagens = []
-        st.success("Histórico limpo com sucesso!")
-        st.rerun()
 
 # Entrada de texto do Chat estilo mobile
 if user_input := st.chat_input("Digite sua mensagem para a Luna..."):
