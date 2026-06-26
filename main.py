@@ -59,7 +59,7 @@ if "historico_mensagens" not in st.session_state:
 async def gerar_audio_async(texto_bruto):
     """Gera o áudio usando edge-tts com modulação agressiva de tempo e pitch para simular canto."""
     arquivo_audio = "luna_voz_web.mp3"
-    VOZ = "pt-BR-ThalitaNeural"  # Voz mais expressiva e jovem para cantar
+    VOZ = "pt-BR-FranciscaNeural"  # Voz mais expressiva e jovem para cantar
     VELOCIDADE = "+0%"
     PITCH = "+0Hz"
 
