@@ -37,13 +37,13 @@ if "chat_gemini" not in st.session_state:
         "a letra usando marcações SSML válidas, sem usar hífens ou separar as sílabas das palavras. "
         "1. Envolva toda a resposta musical estritamente dentro das tags <speak> e </speak>. "
         "2. Use a tag <prosody> para definir a velocidade e o tom com base no ritmo ouvido: "
-        "   - Para músicas lentas/emocionais, use: <prosody rate='-25%' pitch='+1Hz'>frase inteira aqui</prosody> "
+        "   - Para músicas lentas/emocionais, use: <prosody rate='-20%' pitch='+1Hz'>frase inteira aqui</prosody> "
         "   - Para músicas rápidas/animadas, use: <prosody rate='+15%' pitch='+3Hz'>frase inteira aqui</prosody> "
         "3. Use a tag <break time='Xms'/> entre os versos para simular as pausas de respiração originais. "
         "Exemplo de estrutura obrigatória para o canto: "
         "<speak>Vou cantar no ritmo para você: "
-        "<prosody rate='-20%' pitch='+2Hz'>Eu sei que vou te amar</prosody><break time='600ms'/>"
-        "<prosody rate='-20%' pitch='+2Hz'>Por toda a minha vida</prosody></speak>"
+        "<prosody rate='-15%' pitch='+1Hz'>Eu sei que vou te amar</prosody><break time='600ms'/>"
+        "<prosody rate='-15%' pitch='+1Hz'>Por toda a minha vida</prosody></speak>"
     )
 
     st.session_state.chat_gemini = client.chats.create(
@@ -58,28 +58,29 @@ if "chat_gemini" not in st.session_state:
 if "historico_mensagens" not in st.session_state:
     st.session_state.historico_mensagens = []
 
-# --- ENGINE DE VOZ COM SUPORTE SSML ---
+# --- ENGINE DE VOZ COM SUPORTE SSML (VOZ DA FRANCISCA) ---
 async def gerar_audio_ssml_async(texto_ssml):
-    """Sintetiza o áudio interpretando os comandos nativos de ritmo e pausas do SSML."""
+    """Sintetiza o áudio interpretando os comandos nativos de ritmo e pausas do SSML usando a Francisca."""
     arquivo_audio = "luna_canto_ssml.mp3"
-    VOZ = "pt-BR-ThalitaNeural" # Voz mais expressiva e natural para interpretação
+    # Trocado estritamente para a voz da Francisca conforme solicitado
+    VOZ = "pt-BR-FranciscaNeural" 
 
     # Garante que o texto esteja encapsulado na tag raiz do SSML
     if not texto_ssml.strip().startswith("<speak>"):
         texto_ssml = f"<speak>{texto_ssml}</speak>"
 
     try:
-        # O Edge-TTS interpreta nativamente tags SSML se enviadas na string
+        # O Edge-TTS interpreta as tags SSML (<prosody>, <break>) passadas na string
         communicate = edge_tts.Communicate(texto_ssml, voice=VOZ)
         await communicate.save(arquivo_audio)
         return arquivo_audio
     except Exception as e:
-        st.error(f"Erro ao sintetizar o áudio: {e}")
+        st.error(f"Erro ao sintetizar o áudio da Francisca: {e}")
         return None
 
 # --- INTERFACE VISUAL ---
 st.title("🌙 Luna — Assistente Musical")
-st.write("Anexe seu arquivo de vídeo ou áudio. A Luna mapeará o ritmo e cantará de volta de forma fluida!")
+st.write("Anexe seu arquivo de vídeo ou áudio. A Luna usará a voz da Francisca modulada para cantar!")
 
 for msg in st.session_state.historico_mensagens:
     with st.chat_message(msg["role"]):
@@ -150,8 +151,9 @@ if user_input := st.chat_input("Peça para a Luna cantar..."):
                                 .replace('"', "")
                                 .replace(">", ""))
             
-            if "<break" in texto_limpo_tela:
-                texto_limpo_tela = texto_limpo_tela.split("<break")[0]
+            # Remove as marcações de break para o texto impresso não ficar sujo
+            import re
+            texto_limpo_tela = re.sub(r'<break[^>]*/>', '', texto_limpo_tela).strip()
                 
             placeholder_resposta.write(texto_limpo_tela)
 
@@ -161,7 +163,7 @@ if user_input := st.chat_input("Peça para a Luna cantar..."):
             if caminho_som and os.path.exists(caminho_som):
                 st.audio(caminho_som, format="audio/mp3", autoplay=True)
 
-            if caminho_local_midia and os.path.exists(caminho_local_midia):
+            if caminho_local_midia and os.path.exists(caminia_local_midia):
                 os.remove(caminho_local_midia)
 
             st.session_state.historico_mensagens.append({
