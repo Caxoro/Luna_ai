@@ -23,37 +23,13 @@ def obter_cliente_gemini():
 
 client = obter_cliente_gemini()
 
-# Inicializa o chat na sessão do navegador
-if "chat_gemini" not in st.session_state:
-    instrucao_sistema = (
-        "Você é a Luna, uma inteligência artificial gentil, acolhedora e humana. "
-        "Não use emojis e nunca use o caractere asterisco (*) em suas respostas. "
-        "DIRETRIZ DE ANÁLISE MUSICAL MULTIMODAL: "
-        "O usuário enviará um vídeo ou áudio contendo uma música. Sua tarefa é analisar o tom, "
-        "a melodia, o ritmo e as emoções contidas no arquivo. "
-        "DIRETRIZ DE ÁUDIO NATIVO (CRÍTICA): "
-        "Você está configurada para responder diretamente usando a sua própria voz em áudio (MIME type: audio/mp3). "
-        "Quando o usuário pedir para você cantar, você DEVE usar a sua capacidade de modulação de voz nativa "
-        "para cantar os versos da música, imitando o tom, o ritmo, as pausas e a melodia do arquivo original enviado. "
-        "Cante de forma natural, expressando a mesma emoção (alegria, tristeza, calmaria) da música analisada."
-    )
-
-    st.session_state.chat_gemini = client.chats.create(
-        model=MODELO_PRINCIPAL,
-        config=types.GenerateContentConfig(
-            system_instruction=instrucao_sistema,
-            temperature=0.6,
-            # Força o Gemini a gerar áudio real como resposta principal, além do texto
-            response_modalities=["TEXT", "AUDIO"]
-        )
-    )
-
+# Inicializa o histórico visual da tela se não existir
 if "historico_mensagens" not in st.session_state:
     st.session_state.historico_mensagens = []
 
-# --- INTERFACE VISUAL ---
-st.title("🌙 Luna — Assistente Musical")
-st.write("Anexe um vídeo. O Gemini processará o canto inteiramente na nuvem e a Luna cantará de volta!")
+# --- INTERFACE VISUAL DO CHAT ---
+st.title("🌙 Luna — Voz Nativa Gemini")
+st.write("Anexe um arquivo de música. O Gemini usará o motor de áudio nativo para cantar para você!")
 
 for msg in st.session_state.historico_mensagens:
     with st.chat_message(msg["role"]):
@@ -65,8 +41,9 @@ with st.sidebar:
     st.header("Upload de Mídia")
     video_enviado = st.file_uploader("Anexe o vídeo/áudio da música aqui:", type=["mp4", "avi", "mov", "mp3", "wav", "m4a"])
 
-if user_input := st.chat_input("Peça para a Luna analisar e cantar..."):
+if user_input := st.chat_input("Peça para a Luna cantar..."):
 
+    # 1. Exibe a mensagem do usuário na tela
     with st.chat_message("user"):
         st.write(user_input)
     st.session_state.historico_mensagens.append({"role": "user", "content": user_input})
@@ -74,8 +51,9 @@ if user_input := st.chat_input("Peça para a Luna analisar e cantar..."):
     conteudo_envio = []
     caminho_local_midia = None
 
+    # 2. Upload do arquivo de mídia para a API do Gemini
     if video_enviado:
-        with st.spinner("Luna está analisando a melodia na nuvem do Google..."):
+        with st.spinner("Luna está processando a mídia na infraestrutura do Google..."):
             try:
                 caminho_local_midia = video_enviado.name
                 with open(caminho_local_midia, "wb") as f:
@@ -91,51 +69,75 @@ if user_input := st.chat_input("Peça para a Luna analisar e cantar..."):
                     conteudo_envio.append(arquivo_gemini)
                     
             except Exception as e:
-                st.error(f"Erro ao processar mídias: {e}")
+                st.error(f"Erro ao carregar arquivo na nuvem: {e}")
 
-    if isinstance(conteudo_envio, list) and len(conteudo_envio) > 0:
-        comando_contextualizado = f"{user_input} (Analise a música anexa e responda cantando no mesmo tom e melodia usando seu output de áudio nativo)."
-        conteudo_envio.append(types.Part.from_text(text=comando_contextualizado))
-    else:
-        conteudo_envio = user_input
+    # Constrói o comando definindo as regras de comportamento para a voz nativa
+    instrucao_contextualizada = (
+        f"Você é a Luna, uma inteligência artificial gentil, acolhedora e altamente musical. "
+        f"Comando do usuário: {user_input}. "
+        f"Instrução crítica: Analise o arquivo de mídia anexo se houver. Entenda a melodia, as pausas, "
+        f"o tom e o ritmo da música original. Use o seu output de áudio nativo para responder "
+        f"cantando a música de forma parecida, reproduzindo a mesma emoção e andamento técnico musical."
+    )
+    conteudo_envio.append(types.Part.from_text(text=instrucao_contextualizada))
 
-    # Geração da Resposta da IA
+    # 3. Geração da resposta usando Voz Nativa do Gemini
     with st.chat_message("assistant"):
         placeholder_resposta = st.empty()
 
         try:
-            response = st.session_state.chat_gemini.send_message(message=conteudo_envio)
-
-            # Extrai o texto da resposta
-            texto_tela = response.text.strip() if response.text else "Cantando para você..."
-            texto_tela = texto_tela.replace("*", "")
-            placeholder_resposta.write(texto_tela)
+            with st.spinner("Luna está soltando a voz e gerando o áudio..."):
+                # Executa a chamada isolada configurada estritamente para saída em áudio
+                response = client.models.generate_content(
+                    model=MODELO_PRINCIPAL,
+                    contents=conteudo_envio,
+                    config=types.GenerateContentConfig(
+                        response_modalities=["AUDIO"], # Apenas AUDIO evita o erro 400
+                        speech_config=types.SpeechConfig(
+                            voice_config=types.VoiceConfig(
+                                prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                                    voice_name="Aoede" # Voz feminina expressiva do catálogo Gemini
+                                )
+                            )
+                        )
+                    )
+                )
 
             caminho_audio_resposta = None
+            texto_transcrito = "Áudio gerado pela Luna 🌙"
 
-            # EXTRAÇÃO DO ÁUDIO NATIVO DO GEMINI:
-            # Varre as partes da resposta procurando pelo arquivo de áudio gerado pelo Google
-            for part in response.candidates[0].content.parts:
-                if part.inline_data and part.inline_data.mime_type.startswith("audio"):
-                    caminho_audio_resposta = "luna_resposta_nativa.mp3"
-                    with open(caminho_audio_resposta, "wb") as f:
-                        f.write(part.inline_data.data)
-                    break
+            # 4. Extração do arquivo de áudio retornado pelo Google
+            for candidate in response.candidates:
+                for part in candidate.content.parts:
+                    # Captura o binário do áudio nativo gerado pelo modelo
+                    if part.inline_data and part.inline_data.mime_type.startswith("audio"):
+                        caminho_audio_resposta = "luna_canto_nativo.mp3"
+                        with open(caminho_audio_resposta, "wb") as f:
+                            f.write(part.inline_data.data)
+                    
+                    # Captura o texto que foi falado/cantado para exibir na tela
+                    if part.text:
+                        texto_transcrito = part.text.replace("*", "")
 
-            if caminho_audio_resposta and os.path.exists(caminho_audio_resposta):
+            # Atualiza a tela com o texto e o player do áudio cantado
+            placeholder_resposta.write(texto_transcrito)
+
+            if camino_audio_resposta and os.path.exists(caminho_audio_resposta):
                 st.audio(caminho_audio_resposta, format="audio/mp3", autoplay=True)
 
+            # Remove arquivos temporários locais para evitar sobrecarga no servidor web
             if caminho_local_midia and os.path.exists(caminho_local_midia):
                 os.remove(caminho_local_midia)
 
+            # Armazena o resultado na sessão para persistência do histórico
             st.session_state.historico_mensagens.append({
                 "role": "assistant",
-                "content": texto_tela,
+                "content": texto_transcrito,
                 "audio": caminho_audio_resposta
             })
 
         except Exception as e:
-            st.error(f"Erro na requisição. Detalhes: {e}")
+            st.error(f"Erro na geração de áudio nativo do Gemini: {e}")
             if caminho_local_midia and os.path.exists(caminho_local_midia):
                 os.remove(caminho_local_midia)
-        
+                
