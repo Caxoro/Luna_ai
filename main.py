@@ -16,7 +16,6 @@ else:
     MINHA_CHAVE_API = NOVA_CHAVE_GERADA
 
 MODELO_CEREBRO = "gemini-2.5-flash"
-# Modelo especialista do Google para sintetizar voz nativa avançada
 MODELO_VOZ_NATIVA = "gemini-2.5-flash" 
 
 @st.cache_resource
@@ -166,8 +165,8 @@ if user_input := st.chat_input("Peça para a Luna analisar e cantar..."):
                     f"técnicas identificadas no arquivo de vídeo anexado anteriormente."
                 )
 
-            # 2. O motor especialista em áudio do Google gera a voz cantada nativa com base no texto e nas diretrizes rítmicas
-            with St.spinner("Luna está utilizando o motor generativo de áudio do Google para cantar..."):
+            # 2. O motor especialista em áudio do Google gera a voz cantada nativa (st.spinner corrigido aqui)
+            with st.spinner("Luna está utilizando o motor generativo de áudio do Google para cantar..."):
                 caminho_som = gerar_audio_nativo_gemini(texto_tela, instrucao_musical)
 
             if caminho_som and os.path.exists(caminho_som):
@@ -186,4 +185,4 @@ if user_input := st.chat_input("Peça para a Luna analisar e cantar..."):
             st.error(f"Erro na requisição geral: {e}")
             if caminho_local_midia and os.path.exists(caminho_local_midia):
                 os.remove(caminho_local_midia)
-                
+            
