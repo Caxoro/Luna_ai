@@ -163,7 +163,7 @@ if user_input := st.chat_input("Peça para a Luna cantar..."):
             if caminho_som and os.path.exists(caminho_som):
                 st.audio(caminho_som, format="audio/mp3", autoplay=True)
 
-            if caminho_local_midia and os.path.exists(caminia_local_midia):
+            if caminho_local_midia and os.path.exists(caminho_local_midia):
                 os.remove(caminho_local_midia)
 
             st.session_state.historico_mensagens.append({
