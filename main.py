@@ -9,9 +9,17 @@ from google.genai import types
 # --- CONFIGURAÇÃO DA PÁGINA WEB ---
 st.set_page_config(page_title="Luna - Assistente Virtual", page_icon="🌙", layout="centered")
 
-# --- CONFIGURAÇÃO DA API OFICIAL GEMINI ---
-MINHA_CHAVE_API = "AQ.Ab8RN6I0Sk4bZe-_AGW1zJEWpMjgKW8qTi_yHeqOJeYia7npWw"
-MODELO_PRINCIPAL = "gemini-2.5-flash"  # Versão mais leve para economizar cota diária
+# Cole a sua NOVA chave gerada no AI Studio entre as aspas:
+NOVA_CHAVE_GERADA = "COLE_AQUI_SUA_NOVA_CHAVE_AIZA"
+
+# Se estiver rodando no Streamlit Cloud, ele tenta pegar dos 'Secrets' seguros, 
+# se não encontrar, usa a chave que você colou acima.
+if "GEMINI_API_KEY" in st.secrets:
+    MINHA_CHAVE_API = st.secrets["GEMINI_API_KEY"]
+else:
+    MINHA_CHAVE_API = NOVA_CHAVE_GERADA
+
+MODELO_PRINCIPAL = "gemini-2.5-flash"
 
 
 # Inicializa o cliente do Gemini
