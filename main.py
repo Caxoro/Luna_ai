@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+import re
 import edge_tts
 import streamlit as st
 from google import genai
@@ -32,17 +33,19 @@ if "chat_gemini" not in st.session_state:
         "DIRETRIZ DE ANÁLISE MUSICAL MULTIMODAL: "
         "Quando o usuário enviar um vídeo ou áudio de música e pedir para você cantar, "
         "analise o ritmo, a melodia, as pausas de respiração e a emoção contida na faixa. "
-        "DIRETRIZ DE FORMATAÇÃO DE CANTO (SSML): "
-        "Para cantar de forma parecida com a música sem picotar a voz, você DEVE estruturar "
-        "a letra usando marcações SSML válidas, sem usar hífens ou separar as sílabas das palavras. "
-        "1. Envolva toda a resposta musical estritamente dentro das tags <speak> e </speak>. "
-        "2. Use a tag <prosody> para definir a velocidade e o tom com base no ritmo ouvido: "
-        "   - Para músicas lentas/emocionais, use: <prosody rate='-20%' pitch='+1Hz'>frase inteira aqui</prosody> "
-        "   - Para músicas rápidas/animadas, use: <prosody rate='+15%' pitch='+3Hz'>frase inteira aqui</prosody> "
-        "3. Use a tag <break time='Xms'/> entre os versos para simular as pausas de respiração originais. "
-        "Exemplo de estrutura obrigatória para o canto: "
-        "<speak>Vou cantar no ritmo para você: "
-        "<prosody rate='-15%' pitch='+1Hz'>Eu sei que vou te amar</prosody><break time='600ms'/>"
+        "DIRETRIZ DE FORMATAÇÃO DE CANTO (SSML MANDATÓRIO): "
+        "Para cantar de forma parecida com a música sem ler códigos ou picotar a voz, você DEVE estruturar "
+        "a sua resposta estritamente usando marcações SSML válidas. Siga rigorosamente este padrão: "
+        "1. Envolva toda a sua resposta estritamente dentro das tags <speak> e </speak>. "
+        "2. Se for fazer um comentário inicial em tom de conversa, escreva-o normalmente logo após o <speak>. "
+        "3. Ao iniciar a letra da música, envolva cada verso em uma tag <prosody> fechada corretamente. "
+        "   - Se a melodia for lenta/suave use: <prosody rate='-20%' pitch='+1Hz'>letra do verso</prosody> "
+        "   - Se a melodia for rápida/agitada use: <prosody rate='+15%' pitch='+3Hz'>letra do verso</prosody> "
+        "4. Insira a tag de pausa obrigatoriamente neste formato exato e fechado entre os versos: <break time='400ms'/> "
+        "5. Nunca deixe atributos de texto soltos como '+15%', 'pitch=' ou '+3Hz' fora dos sinais de maior e menor (< >). "
+        "Exemplo de resposta perfeita esperada: "
+        "<speak>Claro, vou cantar para você seguindo o ritmo original: "
+        "<prosody rate='-15%' pitch='+1Hz'>Eu sei que vou te amar</prosody><break time='500ms'/>"
         "<prosody rate='-15%' pitch='+1Hz'>Por toda a minha vida</prosody></speak>"
     )
 
@@ -50,7 +53,7 @@ if "chat_gemini" not in st.session_state:
         model=MODELO_PRINCIPAL,
         config=types.GenerateContentConfig(
             system_instruction=instrucao_sistema,
-            temperature=0.6,
+            temperature=0.4, # Temperatura mais baixa reduz as chances de alucinação de código
             tools=[{"google_search": {}}]
         )
     )
@@ -58,29 +61,39 @@ if "chat_gemini" not in st.session_state:
 if "historico_mensagens" not in st.session_state:
     st.session_state.historico_mensagens = []
 
-# --- ENGINE DE VOZ COM SUPORTE SSML (VOZ DA FRANCISCA) ---
+# --- ENGINE DE VOZ COM TRATAMENTO DE SSML SEGURO ---
 async def gerar_audio_ssml_async(texto_ssml):
-    """Sintetiza o áudio interpretando os comandos nativos de ritmo e pausas do SSML usando a Francisca."""
+    """Sintetiza o áudio interpretando os comandos nativos de ritmo da Francisca de forma segura."""
     arquivo_audio = "luna_canto_ssml.mp3"
-    # Trocado estritamente para a voz da Francisca conforme solicitado
     VOZ = "pt-BR-FranciscaNeural" 
 
-    # Garante que o texto esteja encapsulado na tag raiz do SSML
+    # Sanitização por segurança: Remove eventuais tags mal formadas ou incompletas feitas pela IA
+    texto_ssml = texto_ssml.replace("Hz]", "Hz'").replace("ms/", "ms'/")
+    
+    # Garante o envelopamento correto na tag raiz do SSML
     if not texto_ssml.strip().startswith("<speak>"):
         texto_ssml = f"<speak>{texto_ssml}</speak>"
+    if not texto_ssml.strip().endswith("</speak>"):
+        texto_ssml = f"{texto_ssml}</speak>"
 
     try:
-        # O Edge-TTS interpreta as tags SSML (<prosody>, <break>) passadas na string
         communicate = edge_tts.Communicate(texto_ssml, voice=VOZ)
         await communicate.save(arquivo_audio)
         return arquivo_audio
     except Exception as e:
-        st.error(f"Erro ao sintetizar o áudio da Francisca: {e}")
-        return None
+        # Se falhar por erro de sintaxe complexo no SSML, faz o fallback para áudio de texto limpo automático
+        try:
+            texto_puro = re.sub(r'<[^>]*>', '', texto_ssml).strip()
+            communicate = edge_tts.Communicate(texto_puro, voice=VOZ, rate="+10%")
+            await communicate.save(arquivo_audio)
+            return arquivo_audio
+        except Exception:
+            st.error(f"Erro ao sintetizar o áudio da Francisca: {e}")
+            return None
 
 # --- INTERFACE VISUAL ---
 st.title("🌙 Luna — Assistente Musical")
-st.write("Anexe seu arquivo de vídeo ou áudio. A Luna usará a voz da Francisca modulada para cantar!")
+st.write("Anexe seu arquivo de vídeo ou áudio. A Luna usará a voz da Francisca de forma limpa para cantar!")
 
 for msg in st.session_state.historico_mensagens:
     with st.chat_message(msg["role"]):
@@ -123,8 +136,8 @@ if user_input := st.chat_input("Peça para a Luna cantar..."):
     if isinstance(conteudo_envio, list) and len(conteudo_envio) > 0:
         comando_contextualizado = (
             f"{user_input} (Analise cuidadosamente a melodia e o andamento do arquivo anexo. "
-            f"Gere sua resposta estritamente estruturada dentro de marcações SSML válidas com <speak>, <prosody> e <break>, "
-            f"ajustando as taxas de tempo e pausas para mimetizar a música original de forma fluida e contínua)."
+            f"Gere sua resposta estritamente estruturada dentro de marcações SSML válidas com <speak>, <prosody> e <break>. "
+            f"Preste muita atenção para fechar todas as tags de forma perfeita e nunca deixar códigos vazados)."
         )
         conteudo_envio.append(types.Part.from_text(text=comando_contextualizado))
     else:
@@ -139,21 +152,25 @@ if user_input := st.chat_input("Peça para a Luna cantar..."):
             fala_bruta = response.text.strip() if response.text else "Não consegui extrair os dados da música."
             texto_luna = fala_bruta.replace("*", "")
             
-            # Limpa os marcadores técnicos para exibir a letra de forma limpa na tela do chat
-            texto_limpo_tela = (texto_luna
-                                .replace("<speak>", "")
-                                .replace("</speak>", "")
-                                .replace("<prosody", "")
-                                .replace("</prosody>", "")
+            # Remove todas as marcações XML/SSML para que a exibição em tela fique perfeitamente limpa
+            texto_limpo_tela = re.sub(r'<[^>]*>', '', texto_luna).strip()
+            
+            # Limpa qualquer resíduo textual de atributos que a IA possa ter deixado vazar
+            texto_limpo_tela = (texto_limpo_tela
                                 .replace("rate=", "")
                                 .replace("pitch=", "")
-                                .replace("'", "")
-                                .replace('"', "")
-                                .replace(">", ""))
+                                .replace("time=", "")
+                                .replace("+15%", "")
+                                .replace("+3Hz", "")
+                                .replace("+1Hz", "")
+                                .replace("-20%", "")
+                                .replace("300ms", "")
+                                .replace("400ms", "")
+                                .replace("500ms", "")
+                                .replace("600ms", ""))
             
-            # Remove as marcações de break para o texto impresso não ficar sujo
-            import re
-            texto_limpo_tela = re.sub(r'<break[^>]*/>', '', texto_limpo_tela).strip()
+            # Remove múltiplos espaços extras deixados pelas limpezas
+            texto_limpo_tela = re.sub(r'\s+', ' ', texto_limpo_tela).strip()
                 
             placeholder_resposta.write(texto_limpo_tela)
 
