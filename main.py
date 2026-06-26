@@ -1,6 +1,7 @@
 import asyncio
 import os
 import time
+import edge_tts
 import streamlit as st
 from google import genai
 from google.genai import types
@@ -15,8 +16,7 @@ if "GEMINI_API_KEY" in st.secrets:
 else:
     MINHA_CHAVE_API = NOVA_CHAVE_GERADA
 
-MODELO_CEREBRO = "gemini-2.5-flash"
-MODELO_VOZ_NATIVA = "gemini-2.5-flash" 
+MODELO_PRINCIPAL = "gemini-2.5-flash"
 
 @st.cache_resource
 def obter_cliente_gemini():
@@ -27,22 +27,30 @@ client = obter_cliente_gemini()
 # Inicializa o chat na sessão do navegador
 if "chat_gemini" not in st.session_state:
     instrucao_sistema = (
-        "Você é a Luna, uma inteligência artificial gentil, acolhedora e humana. "
+        "Você é a Luna, uma inteligência artificial gentil, acolhedora, doce e humana. "
         "Não use emojis e nunca use o caractere asterisco (*) em suas respostas. "
         "DIRETRIZ DE ANÁLISE MUSICAL MULTIMODAL: "
-        "Quando o usuário enviar um vídeo ou áudio contendo uma música e pedir para você cantar, "
-        "sua tarefa é analisar os dados do arquivo: a melodia, o ritmo, as pausas e as emoções contidas. "
-        "DIRETRIZ DE ESCRITA DE CANTO: "
-        "Ao responder cantando, escreva a letra de forma limpa, natural e corrida. "
-        "Ajuste o vocabulário para expressar exatamente o mesmo sentimento da música analisada (tristeza, alegria, calmaria). "
-        "Sua resposta textual será convertida em ondas de áudio nativas reais, então crie versos fluidos."
+        "Quando o usuário enviar um vídeo ou áudio de música e pedir para você cantar, "
+        "analise o ritmo, a melodia, as pausas de respiração e a emoção contida na faixa. "
+        "DIRETRIZ DE FORMATAÇÃO DE CANTO (SSML): "
+        "Para cantar de forma parecida com a música sem picotar a voz, você DEVE estruturar "
+        "a letra usando marcações SSML válidas, sem usar hífens ou separar as sílabas das palavras. "
+        "1. Envolva toda a resposta musical estritamente dentro das tags <speak> e </speak>. "
+        "2. Use a tag <prosody> para definir a velocidade e o tom com base no ritmo ouvido: "
+        "   - Para músicas lentas/emocionais, use: <prosody rate='-25%' pitch='+1Hz'>frase inteira aqui</prosody> "
+        "   - Para músicas rápidas/animadas, use: <prosody rate='+15%' pitch='+3Hz'>frase inteira aqui</prosody> "
+        "3. Use a tag <break time='Xms'/> entre os versos para simular as pausas de respiração originais. "
+        "Exemplo de estrutura obrigatória para o canto: "
+        "<speak>Vou cantar no ritmo para você: "
+        "<prosody rate='-20%' pitch='+2Hz'>Eu sei que vou te amar</prosody><break time='600ms'/>"
+        "<prosody rate='-20%' pitch='+2Hz'>Por toda a minha vida</prosody></speak>"
     )
 
     st.session_state.chat_gemini = client.chats.create(
-        model=MODELO_CEREBRO,
+        model=MODELO_PRINCIPAL,
         config=types.GenerateContentConfig(
             system_instruction=instrucao_sistema,
-            temperature=0.7,
+            temperature=0.6,
             tools=[{"google_search": {}}]
         )
     )
@@ -50,62 +58,40 @@ if "chat_gemini" not in st.session_state:
 if "historico_mensagens" not in st.session_state:
     st.session_state.historico_mensagens = []
 
-# --- SÍNTESE DE ÁUDIO NATIVA DO GOOGLE ---
-def gerar_audio_nativo_gemini(texto_para_cantar, instrucao_musical):
-    """Utiliza o motor generativo de áudio do Google para vocalizar as estrofes."""
-    arquivo_audio = "luna_canto_nativo.wav"
+# --- ENGINE DE VOZ COM SUPORTE SSML ---
+async def gerar_audio_ssml_async(texto_ssml):
+    """Sintetiza o áudio interpretando os comandos nativos de ritmo e pausas do SSML."""
+    arquivo_audio = "luna_canto_ssml.mp3"
+    VOZ = "pt-BR-ThalitaNeural" # Voz mais expressiva e natural para interpretação
+
+    # Garante que o texto esteja encapsulado na tag raiz do SSML
+    if not texto_ssml.strip().startswith("<speak>"):
+        texto_ssml = f"<speak>{texto_ssml}</speak>"
+
     try:
-        # Prompt de engenharia acústica focado em fazer o sintetizador cantar
-        prompt_voz = (
-            f"Vocalize o seguinte texto cantando de forma expressiva: '{texto_para_cantar}'. "
-            f"Contexto rítmico obrigatório: {instrucao_musical}. "
-            f"Imite o andamento, as pausas de respiração e a melodia descrita."
-        )
-        
-        # Executa a geração usando a inteligência de áudio da nuvem do Google
-        response = client.models.generate_content(
-            model=MODELO_VOZ_NATIVA,
-            contents=prompt_voz,
-            config=types.GenerateContentConfig(
-                response_modalities=["AUDIO"], # Solicita estritamente o retorno em áudio
-                speech_config=types.SpeechConfig(
-                    voice_config=types.VoiceConfig(
-                        prebuilt_voice_config=types.PrebuiltVoiceConfig(
-                            voice_name="Aoede" # Voz expressiva do catálogo do Gemini
-                        )
-                    )
-                )
-            )
-        )
-        
-        # Varre o payload de resposta para extrair o binário do áudio gerado
-        for candidate in response.candidates:
-            for part in candidate.content.parts:
-                if part.inline_data and part.inline_data.mime_type.startswith("audio"):
-                    with open(arquivo_audio, "wb") as f:
-                        f.write(part.inline_data.data)
-                    return arquivo_audio
-                    
-        return None
+        # O Edge-TTS interpreta nativamente tags SSML se enviadas na string
+        communicate = edge_tts.Communicate(texto_ssml, voice=VOZ)
+        await communicate.save(arquivo_audio)
+        return arquivo_audio
     except Exception as e:
-        st.error(f"Erro na síntese de áudio do Google: {e}")
+        st.error(f"Erro ao sintetizar o áudio: {e}")
         return None
 
 # --- INTERFACE VISUAL ---
-st.title("🌙 Luna — Voz Nativa Gemini")
-st.write("Anexe uma música. O Gemini analisará a estrutura rítmica e cantará de volta usando o motor de áudio nativo do Google!")
+st.title("🌙 Luna — Assistente Musical")
+st.write("Anexe seu arquivo de vídeo ou áudio. A Luna mapeará o ritmo e cantará de volta de forma fluida!")
 
 for msg in st.session_state.historico_mensagens:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
         if "audio" in msg and msg["audio"]:
-            st.audio(msg["audio"])
+            st.audio(msg["audio"], format="audio/mp3")
 
 with st.sidebar:
     st.header("Upload de Mídia")
     video_enviado = st.file_uploader("Anexe o vídeo/áudio da música aqui:", type=["mp4", "avi", "mov", "mp3", "wav", "m4a"])
 
-if user_input := st.chat_input("Peça para a Luna analisar e cantar..."):
+if user_input := st.chat_input("Peça para a Luna cantar..."):
 
     with st.chat_message("user"):
         st.write(user_input)
@@ -115,7 +101,7 @@ if user_input := st.chat_input("Peça para a Luna analisar e cantar..."):
     caminho_local_midia = None
 
     if video_enviado:
-        with st.spinner("Luna está enviando o arquivo para a nuvem do Google mapear a melodia..."):
+        with st.spinner("Luna está escutando o arquivo para mapear o andamento e o tom..."):
             try:
                 caminho_local_midia = video_enviado.name
                 with open(caminho_local_midia, "wb") as f:
@@ -135,8 +121,9 @@ if user_input := st.chat_input("Peça para a Luna analisar e cantar..."):
 
     if isinstance(conteudo_envio, list) and len(conteudo_envio) > 0:
         comando_contextualizado = (
-            f"{user_input} (Analise cirurgicamente o andamento, tom e pausas do arquivo anexo. "
-            f"Gere a letra adaptada para que eu possa enviar ao seu sintetizador de voz)."
+            f"{user_input} (Analise cuidadosamente a melodia e o andamento do arquivo anexo. "
+            f"Gere sua resposta estritamente estruturada dentro de marcações SSML válidas com <speak>, <prosody> e <break>, "
+            f"ajustando as taxas de tempo e pausas para mimetizar a música original de forma fluida e contínua)."
         )
         conteudo_envio.append(types.Part.from_text(text=comando_contextualizado))
     else:
@@ -147,42 +134,44 @@ if user_input := st.chat_input("Peça para a Luna analisar e cantar..."):
         placeholder_resposta = st.empty()
 
         try:
-            # 1. O cérebro do Gemini analisa o vídeo e gera o texto/letra
             response = st.session_state.chat_gemini.send_message(message=conteudo_envio)
-            texto_tela = response.text.strip() if response.text else "Cantando para você..."
-            texto_tela = texto_tela.replace("*", "")
-            placeholder_resposta.write(texto_tela)
-
-            caminho_som = None
-
-            # Contexto padrão de canto caso não tenha enviado arquivo de referência
-            instrucao_musical = "Cante com ritmo melódico e entonação suave de música."
+            fala_bruta = response.text.strip() if response.text else "Não consegui extrair os dados da música."
+            texto_luna = fala_bruta.replace("*", "")
             
-            # Se o usuário enviou um vídeo, pedimos para a IA formular um metadado rítmico descritivo
-            if caminho_local_midia:
-                instrucao_musical = (
-                    f"Cante reproduzindo fielmente o andamento, o tom emocional e as pausas "
-                    f"técnicas identificadas no arquivo de vídeo anexado anteriormente."
-                )
+            # Limpa os marcadores técnicos para exibir a letra de forma limpa na tela do chat
+            texto_limpo_tela = (texto_luna
+                                .replace("<speak>", "")
+                                .replace("</speak>", "")
+                                .replace("<prosody", "")
+                                .replace("</prosody>", "")
+                                .replace("rate=", "")
+                                .replace("pitch=", "")
+                                .replace("'", "")
+                                .replace('"', "")
+                                .replace(">", ""))
+            
+            if "<break" in texto_limpo_tela:
+                texto_limpo_tela = texto_limpo_tela.split("<break")[0]
+                
+            placeholder_resposta.write(texto_limpo_tela)
 
-            # 2. O motor especialista em áudio do Google gera a voz cantada nativa (st.spinner corrigido aqui)
-            with st.spinner("Luna está utilizando o motor generativo de áudio do Google para cantar..."):
-                caminho_som = gerar_audio_nativo_gemini(texto_tela, instrucao_musical)
+            # Envia a estrutura completa com as tags de prosódia para o gerador de áudio
+            caminho_som = asyncio.run(gerar_audio_ssml_async(texto_luna))
 
             if caminho_som and os.path.exists(caminho_som):
-                st.audio(caminho_som, autoplay=True)
+                st.audio(caminho_som, format="audio/mp3", autoplay=True)
 
             if caminho_local_midia and os.path.exists(caminho_local_midia):
                 os.remove(caminho_local_midia)
 
             st.session_state.historico_mensagens.append({
                 "role": "assistant",
-                "content": texto_tela,
+                "content": texto_limpo_tela,
                 "audio": caminho_som
             })
 
         except Exception as e:
-            st.error(f"Erro na requisição geral: {e}")
+            st.error(f"Erro na requisição: {e}")
             if caminho_local_midia and os.path.exists(caminho_local_midia):
                 os.remove(caminho_local_midia)
-            
+                
