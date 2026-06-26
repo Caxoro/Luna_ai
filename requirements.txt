@@ -2,3 +2,4 @@ streamlit
 google-genai
 edge-tts
 pillow
+elevenlabs
