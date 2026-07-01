@@ -6,3 +6,8 @@ elevenlabs
 transformers 
 scipy 
 torch
+opencv-python
+mss
+numpy
+pyserial
+pyautogui
