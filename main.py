@@ -258,11 +258,15 @@ if user_input := st.chat_input("Digite sua mensagem para a Luna..."):
             st.session_state.historico_mensagens.append({
                 "role": "assistant",
                 "content": texto_tela,
-                "audio": caminho_som})
-            except Exception as e:
-                if caminho_local_midia and os.path.exists(caminho_local_midia):
-                    os.remove(caminho_local_midia)
-                if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
-                    aviso = "Poxa... Minha caixinha de pensamentos gastou toda a energia diária por hoje... 🌙"placeholder_resposta.write(aviso)
-                else:
-                    st.error(f"Erro na requisição. Detalhes: {e}")
+                "audio": caminho_som
+            })
+
+        except Exception as e:
+            if caminho_local_midia and os.path.exists(caminho_local_midia):
+                os.remove(caminho_local_midia)
+                
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                aviso = "Poxa... Minha caixinha de pensamentos gastou toda a energia diária por hoje... 🌙"
+                placeholder_resposta.write(aviso)
+            else:
+                st.error(f"Erro na requisição. Detalhes: {e}")
