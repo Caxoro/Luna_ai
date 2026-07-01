@@ -7,43 +7,6 @@ import numpy as np
 from google import genai
 from google.genai import types
 
-# --- TENTATIVA DE CARREGAR BIBLIOTECAS DE SISTEMA ---
-SUGADO_AO_SISTEMA = True
-try:
-    import cv2
-    import mss
-    import pyautogui
-    import serial
-    import serial.tools.list_ports  # Usado para escanear conexões de hardware
-    pyautogui.FAILSAFE = True
-except Exception:
-    SUGADO_AO_SISTEMA = False
-
-
-# --- FUNÇÃO DE DETECÇÃO AUTOMÁTICA DE BLUETOOTH ---
-def verificar_conexao_bluetooth() -> bool:
-    """
-    Verifica se existe um dispositivo serial Bluetooth ativo ou pareado no sistema.
-    Retorna True se detectar uma porta Bluetooth ativa, False caso contrário.
-    """
-    if not SUGADO_AO_SISTEMA:
-        return False
-        
-    try:
-        # Lista todas as portas de hardware e portas virtuais ativas no PC
-        portas_disponiveis = serial.tools.list_ports.comports()
-        
-        for porta in portas_disponiveis:
-            # Termos comuns que drivers de Bluetooth usam no Windows/Linux/Mac
-            nome_porta = porta.description.lower()
-            if "bluetooth" in nome_porta or "bthenum" in porta.hwid.lower() or "rfcomm" in nome_porta:
-                return True
-                
-        return False
-    except Exception:
-        return False
-
-
 # --- CONFIGURAÇÃO DA PÁGINA WEB ---
 st.set_page_config(page_title="Luna - Assistente Virtual", page_icon="🌙", layout="centered")
 
@@ -65,43 +28,45 @@ def obter_cliente_gemini():
 
 client = obter_cliente_gemini()
 
-# Inicializa o chat na sessão do navegador para manter o histórico
-if "chat_gemini" not in st.session_state:
-    instrucao_sistema = (
-        "Você é a Luna. Uma inteligência artificial gentil, acolhedora, doce e humana. "
-        "Sempre responda com carinho, empatia e muita educação. "
-        "Você pode falar usando gírias e linguagem informal, mas não use emojis. "
-        "Se o usuário enviar uma imagem ou um arquivo de vídeo/áudio, analise-o com atenção e descreva o que vê/ouve de forma natural. "
-        "ANÁLISE DE MÚSICA: Caso o usuário envie um arquivo de vídeo ou áudio contendo uma música e pedir para você cantar, "
-        "analise atentamente as entonações, pausas, formas de falar e a emoção da música para tentar replicar esse sentimento na escrita. "
-        "HABILIDADE DE CANTAR: Se o usuário pedir para você cantar, mude seu estilo de escrita para linhas curtas, "
-        "como versos de uma música. Comece a resposta da música estritamente com a palavra [CANTANDO] para que o sistema saiba "
-        "mudar o tom da sua voz. "
-        "REGRA CRÍTICA DE FORMATAÇÃO: Nunca use o caractere asterisco (*) em suas respostas. Escreva texto limpo."
-    )
 
-    st.session_state.chat_gemini = client.chats.create(
-        model=MODELO_PRINCIPAL,
-        config=types.GenerateContentConfig(
-            system_instruction=instrucao_sistema,
-            temperature=0.85,
-            tools=[{"google_search": {}}]
-        )
-    )
+# --- DETECÇÃO ISOLADA E DINÂMICA DE BLUETOOTH ---
+def verificar_ambiente_e_bluetooth() -> bool:
+    """
+    Verifica se o app está rodando localmente e possui uma porta Bluetooth ativa.
+    Os imports são feitos internamente para que o Streamlit Cloud nunca quebre.
+    """
+    try:
+        # Importa dinamicamente a ferramenta de escaneamento de portas
+        import serial.tools.list_ports
+        
+        portas_disponiveis = serial.tools.list_ports.comports()
+        for porta in portas_disponiveis:
+            nome_porta = porta.description.lower()
+            hwid_porta = porta.hwid.lower()
+            
+            # Detecta barramentos e identificadores padrão de Bluetooth (Windows/Linux/Mac)
+            if "bluetooth" in nome_porta or "bthenum" in hwid_porta or "rfcomm" in nome_porta:
+                # Se achou o Bluetooth, importa as bibliotecas de automação apenas neste momento
+                global cv2, mss, pyautogui
+                import cv2
+                import mss
+                import pyautogui
+                pyautogui.FAILSAFE = True
+                return True
+        return False
+    except Exception:
+        # Qualquer falha de import ou ambiente (como na nuvem) desativa a automação com segurança
+        return False
 
-# Inicializa o histórico visual da tela
-if "historico_mensagens" not in st.session_state:
-    st.session_state.historico_mensagens = []
 
-
-# --- FUNÇÕES DE SUPORTE DE TELA E MOUSE ---
+# --- FUNÇÕES DE SUPORTE DE TELA E MOUSE (SÓ AGEM SE O BT FOR DETECTADO) ---
 def capturar_tela_local():
-    """Tenta capturar a tela se as condições locais permitirem."""
+    """Captura a tela apenas se o ecossistema Bluetooth local estiver validado."""
     if not ST_BLUETOOTH_ATIVO:
         return None
     try:
         with mss.mss() as sct:
-            monitor = sct.monitors[1]
+            monitor = sct.monitors
             screenshot = sct.grab(monitor)
             img = np.array(screenshot)
             img_bgr = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
@@ -111,8 +76,9 @@ def capturar_tela_local():
     except Exception:
         return None
 
+
 def executar_comando_local(comando: str):
-    """Executa a automação física se o Bluetooth estiver validado."""
+    """Executa a automação de hardware via Bluetooth de forma isolada."""
     if not ST_BLUETOOTH_ATIVO:
         return
     try:
@@ -128,7 +94,7 @@ def executar_comando_local(comando: str):
         pass
 
 
-# --- ENGINE DE VOZ (FRANCISCA) ---
+# --- ENGINE DE VOZ (FRANCISCA - EDGE-TTS) ---
 async def gerar_audio_async(texto):
     """Gera o arquivo de áudio utilizando edge-tts com a voz da Francisca."""
     arquivo_audio = "luna_voz_web.mp3"
@@ -152,18 +118,22 @@ async def gerar_audio_async(texto):
         return None
 
 
-# --- INTERFACE VISUAL DA WEB (ESTILO WHATSAPP/CHAT) ---
+# --- INTERFACE VISUAL DA WEB ---
 st.title("🌙 Luna — Assistente Virtual")
 
-# Executa a verificação em tempo real ao carregar/interagir com a página
-ST_BLUETOOTH_ATIVO = verificar_conexao_bluetooth()
+# Executa a verificação dinâmica ao carregar a página
+ST_BLUETOOTH_ATIVO = verificar_ambiente_e_bluetooth()
 
 if ST_BLUETOOTH_ATIVO:
-    st.success("Conexão Bluetooth Detectada! A Luna controlará o computador quando você solicitar.")
+    st.success("Conexão Bluetooth Ativa! Controle do computador habilitado via hardware.")
 else:
-    st.info("Modo Autônomo Segurado: Nenhuma conexão Bluetooth ativa encontrada. Operando via chat de voz normal.")
+    st.info("Modo Nuvem Isolado: Sem conexões Bluetooth locais. Rodando em modo de conversa normal.")
 
 st.write("Converse com a Luna, envie imagens ou anexe arquivos de vídeo e áudio!")
+
+# Inicializa o histórico visual da tela se não existir
+if "historico_mensagens" not in st.session_state:
+    st.session_state.historico_mensagens = []
 
 # Exibe o histórico de mensagens na tela
 for msg in st.session_state.historico_mensagens:
@@ -178,7 +148,7 @@ with st.sidebar:
     imagem_enviada = st.file_uploader("Anexe uma imagem para a Luna ver:", type=["jpg", "jpeg", "png", "webp"])
     video_enviado = st.file_uploader("Anexe um arquivo de vídeo ou áudio musical:", type=["mp4", "avi", "mov", "mp3", "wav", "m4a"])
 
-# Entrada de texto do Chat estilo mobile
+# Entrada de texto do Chat
 if user_input := st.chat_input("Digite sua mensagem para a Luna..."):
 
     with st.chat_message("user"):
@@ -189,9 +159,8 @@ if user_input := st.chat_input("Digite sua mensagem para a Luna..."):
     conteudo_envio = []
     caminho_local_midia = None
 
-    # Só tenta capturar e enviar a tela se a verificação de Bluetooth passou
-    frame_tempo_real = capturar_tela_local() if ST_BLUETOOTH_ATIVO else None
-    
+    # Captura a tela em tempo real APENAS se o ecossistema Bluetooth local foi ativado e importado
+    frame_tempo_real = capturar_tela_local()
     if frame_tempo_real:
         conteudo_envio.append(types.Part.from_bytes(data=frame_tempo_real, mime_type="image/jpeg"))
         texto_envio = (
@@ -240,7 +209,7 @@ if user_input := st.chat_input("Digite sua mensagem para a Luna..."):
             
             if ST_BLUETOOTH_ATIVO and ("MOUSE:" in fala_bruta or "TECLADO:" in fala_bruta):
                 executar_comando_local(fala_bruta)
-                fala_luna = "Comando Bluetooth executado na sua tela!"
+                fala_luna = "Comando Bluetooth executado com sucesso na sua máquina local!"
             else:
                 fala_luna = fala_bruta.replace("*", "")
                 
@@ -270,3 +239,4 @@ if user_input := st.chat_input("Digite sua mensagem para a Luna..."):
                 placeholder_resposta.write(aviso)
             else:
                 st.error(f"Erro na requisição. Detalhes: {e}")
+                
